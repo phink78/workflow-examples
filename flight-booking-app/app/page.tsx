@@ -18,6 +18,7 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { BookingApproval } from "@/components/booking-approval";
+import { WebhookWaiting } from "@/components/webhook-waiting";
 import { SandboxWidget } from "@/components/sandbox-widget";
 import { useMultiTurnChat } from "@/hooks/use-multi-turn-chat";
 import type { MyMessageMetadata } from "@/schemas/chat";
@@ -254,6 +255,18 @@ export default function ChatPage() {
                         );
                       }
 
+                      // Render webhook waiting
+                      if (part.type === "tool-waitForWebhook") {
+                        return (
+                          <WebhookWaiting
+                            key={partIndex}
+                            toolCallId={part.toolCallId}
+                            input={part.input as { description: string }}
+                            output={part.output as string}
+                          />
+                        );
+                      }
+
                       return null;
                     })}
 
@@ -269,7 +282,8 @@ export default function ChatPage() {
                         );
                         const hasApprovalActive = message.parts.some(
                           (part) =>
-                            part.type === "tool-bookingApproval" &&
+                            (part.type === "tool-bookingApproval" ||
+                              part.type === "tool-waitForWebhook") &&
                             "state" in part &&
                             part.state !== "output-available"
                         );

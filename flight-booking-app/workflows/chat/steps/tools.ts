@@ -1,6 +1,7 @@
 import { FatalError, sleep, getWritable } from 'workflow';
 import { z } from 'zod';
 import { bookingApprovalHook } from '../hooks/approval';
+import { webhookHook } from '../hooks/webhook';
 import type { UIMessageChunk } from 'ai';
 import { Sandbox } from '@vercel/sandbox';
 
@@ -499,6 +500,23 @@ async function executeSleep({ durationMs }: { durationMs: number }) {
   return { message: `Slept for ${durationMs}ms` };
 }
 
+async function executeWaitForWebhook(
+  { description }: { description: string },
+  { toolCallId }: { toolCallId: string }
+) {
+  // No "use step" — hooks are workflow-level primitives
+  // Use the toolCallId as the hook token so the UI can construct the webhook URL
+  const hook = webhookHook.create({ token: toolCallId });
+  // Workflow pauses here until the webhook endpoint is called
+  const { method, body } = await hook;
+  return {
+    description,
+    webhookReceived: true,
+    method,
+    body,
+  };
+}
+
 async function executeBookingApproval(
   {
     flightNumber,
@@ -585,6 +603,18 @@ export const flightBookingTools = {
     }),
     execute: executeBookingApproval,
   },
+  waitForWebhook: {
+    description:
+      'Create a webhook URL and pause until it is called by an external system. ' +
+      'Only use this tool when the user explicitly asks for a webhook. ' +
+      'The webhook URL will be displayed to the user so they can share it with external services.',
+    inputSchema: z.object({
+      description: z
+        .string()
+        .describe('What this webhook is waiting for (e.g., "payment confirmation", "deployment complete")'),
+    }),
+    execute: executeWaitForWebhook,
+  },
 };
 
 /**
@@ -655,4 +685,5 @@ export const FLIGHT_ASSISTANT_PROMPT = `You are a helpful flight booking assista
 
 Be friendly and professional. When searching for flights, always ask for travel dates if not provided.
 When booking flights, confirm all details before proceeding.
-When asked to write or run code, use the runCode tool. The sandbox persists between calls, so you can install packages first and then use them.`;
+When asked to write or run code, use the runCode tool. The sandbox persists between calls, so you can install packages first and then use them.
+When the user explicitly asks for a webhook, use the waitForWebhook tool. A URL will be generated and shown to the user. The workflow will pause until the webhook is called, then you'll receive the payload.`;
