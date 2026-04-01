@@ -2,7 +2,7 @@ import { FatalError, sleep, getWritable } from 'workflow';
 import { z } from 'zod';
 import { bookingApprovalHook } from '../hooks/approval';
 import type { UIMessageChunk } from 'ai';
-import type { Sandbox } from '@vercel/sandbox';
+import { Sandbox } from '@vercel/sandbox';
 
 /**
  * Emit a tool-start event for realtime observability.
@@ -46,6 +46,7 @@ async function emitToolEnd(toolName: string) {
 
 /**
  * Emit a sandbox lifecycle event for realtime observability.
+ * Must be called from within a "use step" context.
  */
 async function emitSandboxEvent(event: string, details?: Record<string, any>) {
   const writable = getWritable<UIMessageChunk>();
@@ -95,6 +96,76 @@ function extractErrorMessage(error: unknown): string {
 
   const str = String(error);
   return str !== '[object Object]' ? str : 'Unknown error (unserializable)';
+}
+
+/**
+ * Execute sandbox operations inside a step where getWritable() and Node.js APIs work.
+ * Takes sandboxId as a plain string so it serializes cleanly across the workflow/step boundary.
+ */
+async function runInSandboxStep(
+  sandboxId: string,
+  files: { path: string; content: string }[] | undefined,
+  command: string,
+): Promise<{ exitCode: number; stdout: string; stderr: string; sandboxId: string } | { error: true; phase: string; message: string; sandboxId: string }> {
+  'use step';
+
+  await emitToolStart('runCode');
+  await emitSandboxEvent('connecting', { sandboxId });
+
+  let sandbox: InstanceType<typeof Sandbox>;
+  try {
+    sandbox = await Sandbox.get({ sandboxId });
+  } catch (err) {
+    const msg = extractErrorMessage(err);
+    await emitSandboxEvent('error', { phase: 'connect', message: msg, sandboxId });
+    await emitToolEnd('runCode');
+    return { error: true, phase: 'sandbox-connect', message: msg, sandboxId };
+  }
+  await emitSandboxEvent('ready', { sandboxId, status: sandbox.status });
+
+  // Write files if provided
+  if (files && files.length > 0) {
+    await emitSandboxEvent('writing-files', {
+      sandboxId,
+      fileCount: files.length,
+      filePaths: files.map((f) => f.path),
+    });
+    try {
+      await sandbox.writeFiles(files);
+    } catch (err) {
+      const msg = extractErrorMessage(err);
+      await emitSandboxEvent('error', { phase: 'write-files', message: msg, sandboxId });
+      await emitToolEnd('runCode');
+      return { error: true, phase: 'write-files', message: msg, sandboxId };
+    }
+    await emitSandboxEvent('files-written', { sandboxId, fileCount: files.length });
+  }
+
+  // Run the command
+  await emitSandboxEvent('running-command', { sandboxId, command });
+  try {
+    const result = await sandbox.runCommand('sh', ['-c', command]);
+    const stdout = await result.stdout();
+    const stderr = await result.stderr();
+
+    await emitSandboxEvent('command-complete', {
+      sandboxId,
+      exitCode: result.exitCode,
+    });
+    await emitToolEnd('runCode');
+
+    return {
+      exitCode: result.exitCode,
+      stdout: stdout || '(no output)',
+      stderr: stderr || '',
+      sandboxId,
+    };
+  } catch (err) {
+    const msg = extractErrorMessage(err);
+    await emitSandboxEvent('error', { phase: 'run-command', message: msg, sandboxId });
+    await emitToolEnd('runCode');
+    return { error: true, phase: 'run-command', message: msg, sandboxId };
+  }
 }
 
 export const mockAirports: Record<
@@ -511,8 +582,13 @@ export const flightBookingTools = {
 /**
  * Creates sandbox tools that close over a lazily-created Sandbox instance.
  * The sandbox persists across tool calls within the same workflow run.
+ *
+ * Architecture: The tool execute function runs in workflow context (no "use step")
+ * so it can call getOrCreateSandbox() which internally uses steps for creation.
+ * The actual sandbox operations run inside runInSandboxStep() which has "use step",
+ * enabling getWritable() for event emission and full Node.js APIs.
  */
-export function createSandboxTools(getOrCreateSandbox: () => Promise<Sandbox>) {
+export function createSandboxTools(getOrCreateSandbox: () => Promise<InstanceType<typeof Sandbox>>) {
   return {
     runCode: {
       description:
@@ -536,80 +612,25 @@ export function createSandboxTools(getOrCreateSandbox: () => Promise<Sandbox>) {
           ),
       }),
       execute: async ({ files, command }: { files?: { path: string; content: string }[]; command: string }) => {
-        await emitToolStart('runCode');
+        // Phase 1: Create or retrieve the sandbox at workflow level.
+        // Sandbox.create() uses "use step" internally so this works from workflow context.
+        // The sandbox variable persists in the workflow closure across tool calls.
+        let sandboxId: string;
         try {
-          // Phase 1: Create or retrieve the sandbox
-          await emitSandboxEvent('creating');
-          let sandbox: Sandbox;
-          try {
-            sandbox = await getOrCreateSandbox();
-          } catch (err) {
-            const msg = extractErrorMessage(err);
-            await emitSandboxEvent('error', { phase: 'create', message: msg });
-            await emitToolEnd('runCode');
-            return { error: true, phase: 'sandbox-create', message: msg };
-          }
-          await emitSandboxEvent('ready', { sandboxId: sandbox.sandboxId });
-
-          // Phase 2: Write files if provided
-          if (files && files.length > 0) {
-            await emitSandboxEvent('writing-files', {
-              sandboxId: sandbox.sandboxId,
-              fileCount: files.length,
-              filePaths: files.map((f) => f.path),
-            });
-            try {
-              await sandbox.writeFiles(files);
-            } catch (err) {
-              const msg = extractErrorMessage(err);
-              await emitSandboxEvent('error', { phase: 'write-files', message: msg });
-              await emitToolEnd('runCode');
-              return { error: true, phase: 'write-files', message: msg };
-            }
-            await emitSandboxEvent('files-written', {
-              sandboxId: sandbox.sandboxId,
-              fileCount: files.length,
-            });
-          }
-
-          // Phase 3: Run the command
-          await emitSandboxEvent('running-command', {
-            sandboxId: sandbox.sandboxId,
-            command,
-          });
-          let stdout: string;
-          let stderr: string;
-          let exitCode: number;
-          try {
-            const result = await sandbox.runCommand('sh', ['-c', command]);
-            exitCode = result.exitCode;
-            stdout = await result.stdout();
-            stderr = await result.stderr();
-          } catch (err) {
-            const msg = extractErrorMessage(err);
-            await emitSandboxEvent('error', { phase: 'run-command', message: msg });
-            await emitToolEnd('runCode');
-            return { error: true, phase: 'run-command', message: msg };
-          }
-
-          await emitSandboxEvent('command-complete', {
-            sandboxId: sandbox.sandboxId,
-            exitCode,
-          });
-          await emitToolEnd('runCode');
-
-          return {
-            exitCode,
-            stdout: stdout || '(no output)',
-            stderr: stderr || '',
-          };
+          const sandbox = await getOrCreateSandbox();
+          sandboxId = sandbox.sandboxId;
         } catch (err) {
-          // Catch-all: never let an unstructured error propagate
-          const msg = extractErrorMessage(err);
-          try { await emitSandboxEvent('error', { phase: 'unknown', message: msg }); } catch {}
-          try { await emitToolEnd('runCode'); } catch {}
-          return { error: true, phase: 'unknown', message: msg };
+          // Can't emit events here (no step context), so return structured error
+          return {
+            error: true,
+            phase: 'sandbox-create',
+            message: extractErrorMessage(err),
+            sandboxId: '',
+          };
         }
+
+        // Phase 2: Run the actual work inside a step where getWritable() works
+        return runInSandboxStep(sandboxId, files, command);
       },
     },
   };

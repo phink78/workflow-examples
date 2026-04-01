@@ -18,6 +18,7 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { BookingApproval } from "@/components/booking-approval";
+import { SandboxWidget } from "@/components/sandbox-widget";
 import { useMultiTurnChat } from "@/hooks/use-multi-turn-chat";
 import type { MyMessageMetadata } from "@/schemas/chat";
 import ChatInput from "@/components/chat-input";
@@ -137,11 +138,49 @@ export default function ChatPage() {
             const hasText = message.parts.some((part) => part.type === "text");
             const isLastMessage = index === messages.length - 1;
 
+            // Deduplicate tool calls from doStreamStep retries.
+            // When a stream step fails and retries, each attempt emits tool-call
+            // chunks with different toolCallIds. Skip the phantom ones (no output)
+            // if a later call of the same tool type completed with output.
+            const supersededToolCallIds = new Set<string>();
+            const toolPartsByType = new Map<string, any[]>();
+            for (const part of message.parts) {
+              if ("toolCallId" in part && "state" in part) {
+                const type = (part as any).type as string;
+                if (!toolPartsByType.has(type)) toolPartsByType.set(type, []);
+                toolPartsByType.get(type)!.push(part);
+              }
+            }
+            for (const [, parts] of toolPartsByType) {
+              if (parts.length <= 1) continue;
+              const hasCompleted = parts.some(
+                (p: any) =>
+                  p.state === "output-available" || p.state === "output-error"
+              );
+              if (hasCompleted) {
+                for (const p of parts) {
+                  if (
+                    p.state !== "output-available" &&
+                    p.state !== "output-error"
+                  ) {
+                    supersededToolCallIds.add(p.toolCallId);
+                  }
+                }
+              }
+            }
+
             return (
               <div key={message.id}>
                 <Message from={message.role}>
                   <MessageContent className={message.role === "assistant" ? "w-full" : undefined}>
                     {message.parts.map((part, partIndex) => {
+                      // Skip phantom tool calls from retried stream steps
+                      if (
+                        "toolCallId" in part &&
+                        supersededToolCallIds.has((part as any).toolCallId)
+                      ) {
+                        return null;
+                      }
                       // Render text parts
                       if (part.type === "text") {
                         return (
@@ -175,7 +214,8 @@ export default function ChatPage() {
                         part.type === "tool-getAirportInfo" ||
                         part.type === "tool-bookFlight" ||
                         part.type === "tool-checkBaggageAllowance" ||
-                        part.type === "tool-sleep"
+                        part.type === "tool-sleep" ||
+                        part.type === "tool-runCode"
                       ) {
                         if (!("toolCallId" in part) || !("state" in part)) {
                           return null;
@@ -240,6 +280,12 @@ export default function ChatPage() {
                             "state" in part &&
                             part.state !== "output-available"
                         );
+                        const hasSandboxActive = message.parts.some(
+                          (part) =>
+                            part.type === "tool-runCode" &&
+                            "state" in part &&
+                            part.state !== "output-available"
+                        );
                         return (
                           <>
                             {status === "submitted" && (
@@ -247,7 +293,7 @@ export default function ChatPage() {
                                 Sending message...
                               </Shimmer>
                             )}
-                            {status === "streaming" && !hasSleepActive && !hasApprovalActive && (
+                            {status === "streaming" && !hasSleepActive && !hasApprovalActive && !hasSandboxActive && (
                               <Shimmer className="text-sm">
                                 Waiting for response...
                               </Shimmer>
@@ -260,6 +306,11 @@ export default function ChatPage() {
                             {status === "streaming" && hasApprovalActive && (
                               <Shimmer className="text-sm">
                                 Waiting for approval...
+                              </Shimmer>
+                            )}
+                            {status === "streaming" && hasSandboxActive && (
+                              <Shimmer className="text-sm">
+                                Running in sandbox...
                               </Shimmer>
                             )}
                           </>
@@ -318,6 +369,8 @@ export default function ChatPage() {
         onSendMessage={sendMessage}
         stop={stop}
       />
+
+      <SandboxWidget messages={messages} />
     </div>
   );
 }
@@ -453,6 +506,10 @@ function WorkflowEventBadge({ data, t0 }: { data: any; t0: number | null }) {
 
     case "agent-step":
       // Skip rendering agent-step since we now have realtime tool-call events
+      return null;
+
+    case "sandbox-event":
+      // Rendered in the floating SandboxWidget instead
       return null;
 
     default:
@@ -681,6 +738,48 @@ function renderToolOutput(part: any) {
             <p className="text-sm font-medium">
               Sleeping for {part.input.durationMs}ms...
             </p>
+          </div>
+        );
+      }
+
+      case "tool-runCode": {
+        if (!parsedOutput) return null;
+
+        // Error case: tool caught the error and returned structured data
+        if (parsedOutput.error) {
+          return (
+            <div className="p-3 space-y-2 text-sm">
+              <div className="font-medium text-red-400">
+                Sandbox error during: {parsedOutput.phase || "unknown"}
+              </div>
+              <pre className="whitespace-pre-wrap text-xs bg-red-500/10 rounded-md p-2 overflow-auto max-h-64 text-red-400">
+                {parsedOutput.message || JSON.stringify(parsedOutput, null, 2)}
+              </pre>
+            </div>
+          );
+        }
+
+        // Success case
+        const { exitCode, stdout, stderr } = parsedOutput;
+        return (
+          <div className="p-3 space-y-2 text-sm">
+            {exitCode === 0 ? (
+              <div className="font-medium text-green-600">Exited with code 0</div>
+            ) : (
+              <div className="font-medium text-red-400">Exit code: {exitCode}</div>
+            )}
+            {stdout && stdout !== "(no output)" && (
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground uppercase tracking-wide">stdout</div>
+                <pre className="whitespace-pre-wrap text-xs bg-muted/50 rounded-md p-2 overflow-auto max-h-64">{stdout}</pre>
+              </div>
+            )}
+            {stderr && (
+              <div className="space-y-1">
+                <div className="text-xs text-muted-foreground uppercase tracking-wide">stderr</div>
+                <pre className="whitespace-pre-wrap text-xs bg-red-500/10 rounded-md p-2 overflow-auto max-h-64">{stderr}</pre>
+              </div>
+            )}
           </div>
         );
       }
