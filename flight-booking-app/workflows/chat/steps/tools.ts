@@ -121,6 +121,14 @@ async function runInSandboxStep(
     await emitToolEnd('runCode');
     return { error: true, phase: 'sandbox-connect', message: msg, sandboxId };
   }
+  // Check if the sandbox is still alive
+  if (sandbox.status !== 'running') {
+    const msg = `Sandbox is ${sandbox.status}. The session has expired and can no longer execute commands. Please start a new conversation to get a fresh sandbox.`;
+    await emitSandboxEvent('error', { phase: 'expired', message: msg, sandboxId, status: sandbox.status });
+    await emitToolEnd('runCode');
+    return { error: true, phase: 'sandbox-expired', message: msg, sandboxId };
+  }
+
   await emitSandboxEvent('ready', { sandboxId, status: sandbox.status });
 
   // Write files if provided
