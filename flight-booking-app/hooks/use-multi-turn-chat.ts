@@ -111,13 +111,22 @@ export function useMultiTurnChat<
   // Track which message content we've seen from stream (to clear pending)
   const seenFromStreamRef = useRef<Set<string>>(new Set());
 
-  // Initialize from localStorage on mount
+  // Initialize from URL query param or localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedRunId = localStorage.getItem(STORAGE_KEY);
+      const params = new URLSearchParams(window.location.search);
+      const urlRunId = params.get('run');
+      const storedRunId = urlRunId || localStorage.getItem(STORAGE_KEY);
       if (storedRunId) {
         setRunId(storedRunId);
         setShouldResume(true);
+        localStorage.setItem(STORAGE_KEY, storedRunId);
+        // Ensure URL reflects the run ID
+        if (!urlRunId) {
+          const url = new URL(window.location.href);
+          url.searchParams.set('run', storedRunId);
+          window.history.replaceState({}, '', url.toString());
+        }
       }
     }
   }, []);
@@ -133,6 +142,10 @@ export function useMultiTurnChat<
           if (workflowRunId) {
             setRunId(workflowRunId);
             localStorage.setItem(STORAGE_KEY, workflowRunId);
+            // Push run ID into URL so the link is shareable/resumable
+            const url = new URL(window.location.href);
+            url.searchParams.set('run', workflowRunId);
+            window.history.replaceState({}, '', url.toString());
           }
         },
         onChatEnd: () => {
@@ -142,6 +155,10 @@ export function useMultiTurnChat<
           sentMessagesRef.current.clear();
           seenFromStreamRef.current.clear();
           setPendingMessage(null);
+          // Clear run ID from URL
+          const url = new URL(window.location.href);
+          url.searchParams.delete('run');
+          window.history.replaceState({}, '', url.toString());
         },
         // Configure reconnection to use the stored workflow run ID
         prepareReconnectToStreamRequest: ({ api, ...rest }) => {
@@ -355,6 +372,10 @@ export function useMultiTurnChat<
     setPendingMessage(null);
     setMessages([]);
     stop();
+    // Clear run ID from URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete('run');
+    window.history.replaceState({}, '', url.toString());
   }, [runId, setMessages, stop]);
 
   return {
