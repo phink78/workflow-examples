@@ -1,46 +1,17 @@
-import { FatalError, sleep, getWritable } from 'workflow';
 import { z } from 'zod';
-import { bookingApprovalHook } from '../hooks/approval';
-import type { UIMessageChunk } from 'ai';
 
 /**
  * Emit a tool-start event for realtime observability.
  */
 async function emitToolStart(toolName: string) {
-  const writable = getWritable<UIMessageChunk>();
-  const writer = writable.getWriter();
-  try {
-    await writer.write({
-      type: 'data-workflow',
-      data: {
-        type: 'tool-start',
-        toolName,
-        timestamp: Date.now(),
-      },
-    } as UIMessageChunk);
-  } finally {
-    writer.releaseLock();
-  }
+  console.log(`Starting tool ${toolName}`);
 }
 
 /**
  * Emit a tool-end event for realtime observability.
  */
 async function emitToolEnd(toolName: string) {
-  const writable = getWritable<UIMessageChunk>();
-  const writer = writable.getWriter();
-  try {
-    await writer.write({
-      type: 'data-workflow',
-      data: {
-        type: 'tool-end',
-        toolName,
-        timestamp: Date.now(),
-      },
-    } as UIMessageChunk);
-  } finally {
-    writer.releaseLock();
-  }
+  console.log(`Ending tool ${toolName}`);
 }
 
 export const mockAirports: Record<
@@ -208,7 +179,9 @@ export async function checkFlightStatus({
 
     // Determine gate based on status
     const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const gate = ['Boarding', 'Departed', 'In Flight', 'Landed'].includes(status)
+    const gate = ['Boarding', 'Departed', 'In Flight', 'Landed'].includes(
+      status
+    )
       ? `${['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)]}${
           Math.floor(Math.random() * 30) + 1
         }`
@@ -232,7 +205,8 @@ export async function checkFlightStatus({
 
     return {
       flightNumber: flightNumber.toUpperCase(),
-      status: status + (status === 'Delayed' ? ` (${delayMinutes} minutes)` : ''),
+      status:
+        status + (status === 'Delayed' ? ` (${delayMinutes} minutes)` : ''),
       departure: departureTime.toISOString(),
       arrival: arrivalTime.toISOString(),
       actualDeparture: actualDepartureTime.toISOString(),
@@ -297,7 +271,7 @@ export async function bookFlight({
 
     // 5% chance of seat unavailable
     if (Math.random() < 0.05) {
-      throw new FatalError(
+      throw new Error(
         'Selected seat preference not available. Please try a different preference.'
       );
     }
@@ -360,33 +334,6 @@ export async function checkBaggageAllowance({
   return result;
 }
 
-async function executeSleep({ durationMs }: { durationMs: number }) {
-  // Note: No "use step" here - sleep is a workflow-level function
-  await sleep(durationMs);
-  return { message: `Slept for ${durationMs}ms` };
-}
-
-async function executeBookingApproval(
-  {
-    flightNumber,
-    passengerName,
-    price,
-  }: { flightNumber: string; passengerName: string; price: number },
-  { toolCallId }: { toolCallId: string }
-) {
-  // Note: No "use step" here - hooks are workflow-level primitives
-  // Use the toolCallId as the hook token so the UI can reference it
-  const hook = bookingApprovalHook.create({ token: toolCallId });
-  // Workflow pauses here until the hook is resolved
-  const { approved, comment } = await hook;
-  if (!approved) {
-    return `Booking rejected: ${comment || 'No reason provided'}`;
-  }
-  return `Booking approved for ${passengerName} on flight ${flightNumber} (Price: ${price})${
-    comment ? ` - Note: ${comment}` : ''
-  }`;
-}
-
 // Tool definitions
 export const flightBookingTools = {
   searchFlights: {
@@ -435,22 +382,6 @@ export const flightBookingTools = {
         .describe('Ticket class: economy, business, or first'),
     }),
     execute: checkBaggageAllowance,
-  },
-  sleep: {
-    description: 'Pause execution for a specified duration',
-    inputSchema: z.object({
-      durationMs: z.number().describe('Duration to sleep in milliseconds'),
-    }),
-    execute: executeSleep,
-  },
-  bookingApproval: {
-    description: 'Request human approval before booking a flight',
-    inputSchema: z.object({
-      flightNumber: z.string().describe('Flight number to book'),
-      passengerName: z.string().describe('Name of the passenger'),
-      price: z.number().describe('Total price of the booking'),
-    }),
-    execute: executeBookingApproval,
   },
 };
 

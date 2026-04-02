@@ -18,14 +18,14 @@ import {
   ToolOutput,
 } from "@/components/ai-elements/tool";
 import { BookingApproval } from "@/components/booking-approval";
-import { useMultiTurnChat } from "@/hooks/use-multi-turn-chat";
-import type { MyMessageMetadata } from "@/schemas/chat";
 import ChatInput from "@/components/chat-input";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { DefaultChatTransport } from "ai";
+import { useChat } from "@ai-sdk/react";
 
 const SUGGESTIONS = [
   "Find me flights from San Francisco to Los Angeles",
@@ -47,15 +47,11 @@ export default function ChatPage() {
     error,
     sendMessage,
     stop,
-    endSession,
-    pendingMessage,
-  } = useMultiTurnChat<MyMessageMetadata>({
-    onError: (err) => console.error("Chat error:", err),
-    onFinish: () => {
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-    },
+    setMessages,
+  } = useChat({
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+    }),
   });
 
   // Focus the input on mount
@@ -110,7 +106,7 @@ export default function ChatPage() {
               <Suggestion
                 key={suggestion}
                 suggestion={suggestion}
-                onClick={(s) => sendMessage(s)}
+                onClick={(s) => sendMessage({ text: s })}
               />
             ))}
           </Suggestions>
@@ -121,7 +117,7 @@ export default function ChatPage() {
             </p>
             <button
               type="button"
-              onClick={() => sendMessage(FULL_EXAMPLE_PROMPT)}
+              onClick={() => sendMessage({ text: FULL_EXAMPLE_PROMPT })}
               className="text-sm border px-3 py-2 rounded-md bg-muted/50 text-left hover:bg-muted/75 transition-colors cursor-pointer"
             >
               {FULL_EXAMPLE_PROMPT}
@@ -247,42 +243,6 @@ export default function ChatPage() {
             );
           })}
 
-          {/* Pending message - shows immediately while waiting for stream confirmation */}
-          {pendingMessage && (
-            <>
-              <Message from="user">
-                <MessageContent>
-                  <Response>{pendingMessage}</Response>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Shimmer className="text-xs text-muted-foreground">
-                      Sending...
-                    </Shimmer>
-                  </div>
-                </MessageContent>
-              </Message>
-              <Message from="assistant">
-                <MessageContent>
-                  <Shimmer className="text-sm">
-                    Processing your request...
-                  </Shimmer>
-                </MessageContent>
-              </Message>
-            </>
-          )}
-
-          {/* Loading indicator when user message confirmed but no assistant response yet */}
-          {!pendingMessage &&
-            messages.length > 0 &&
-            messages[messages.length - 1].role === "user" &&
-            status === "streaming" && (
-              <Message from="assistant">
-                <MessageContent>
-                  <Shimmer className="text-sm">
-                    Processing your request...
-                  </Shimmer>
-                </MessageContent>
-              </Message>
-            )}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
@@ -290,8 +250,8 @@ export default function ChatPage() {
       <ChatInput
         status={status}
         textareaRef={textareaRef}
-        onNewChat={endSession}
-        onSendMessage={sendMessage}
+        onNewChat={() => setMessages([])}
+        onSendMessage={(text) => sendMessage({ text })}
         stop={stop}
       />
     </div>
