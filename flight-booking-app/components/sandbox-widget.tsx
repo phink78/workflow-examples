@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
 import {
   TerminalIcon,
@@ -16,13 +16,10 @@ interface SandboxEvent {
   event: string;
   timestamp: number;
   sandboxId?: string;
-  command?: string;
   exitCode?: number;
-  fileCount?: number;
   filePaths?: string[];
-  phase?: string;
   message?: string;
-  status?: string;
+  data?: string;
 }
 
 function extractSandboxEvents(messages: UIMessage[]): SandboxEvent[] {
@@ -42,20 +39,21 @@ function extractSandboxEvents(messages: UIMessage[]): SandboxEvent[] {
   return events;
 }
 
-function getStatusFromEvents(events: SandboxEvent[]): {
-  status: string;
-  sandboxId: string | null;
-  lastCommand: string | null;
-  lastExitCode: number | null;
-  hasError: boolean;
-  lastError: string | null;
-} {
-  let status = "idle";
+type SandboxStatus =
+  | "creating"
+  | "ready"
+  | "writing"
+  | "running"
+  | "done"
+  | "error";
+
+function deriveState(events: SandboxEvent[]) {
+  let status: SandboxStatus = "creating";
   let sandboxId: string | null = null;
-  let lastCommand: string | null = null;
-  let lastExitCode: number | null = null;
-  let hasError = false;
-  let lastError: string | null = null;
+  let exitCode: number | null = null;
+  let error: string | null = null;
+  let stdout = "";
+  let stderr = "";
 
   for (const ev of events) {
     if (ev.sandboxId) sandboxId = ev.sandboxId;
@@ -63,64 +61,54 @@ function getStatusFromEvents(events: SandboxEvent[]): {
     switch (ev.event) {
       case "creating":
         status = "creating";
-        break;
-      case "connecting":
-        status = "connecting";
+        stdout = "";
+        stderr = "";
+        exitCode = null;
+        error = null;
         break;
       case "ready":
         status = "ready";
         break;
-      case "writing-files":
-        status = "writing files";
-        break;
       case "files-written":
         status = "ready";
         break;
-      case "running-command":
+      case "stdout":
         status = "running";
-        lastCommand = ev.command || null;
-        lastExitCode = null;
+        if (ev.data) stdout += ev.data;
         break;
-      case "command-complete":
-        status = "ready";
-        lastExitCode = ev.exitCode ?? null;
+      case "stderr":
+        status = "running";
+        if (ev.data) stderr += ev.data;
+        break;
+      case "done":
+        status = "done";
+        exitCode = ev.exitCode ?? null;
         break;
       case "error":
-        hasError = true;
-        lastError = ev.message || ev.phase || "unknown error";
         status = "error";
+        error = ev.message || "unknown error";
         break;
     }
   }
 
-  return { status, sandboxId, lastCommand, lastExitCode, hasError, lastError };
+  return { status, sandboxId, exitCode, error, stdout, stderr };
 }
 
 const statusConfig: Record<
-  string,
+  SandboxStatus,
   { icon: React.ReactNode; color: string; label: string }
 > = {
-  idle: {
-    icon: <CircleIcon className="size-3" />,
-    color: "text-muted-foreground",
-    label: "Idle",
-  },
   creating: {
     icon: <LoaderIcon className="size-3 animate-spin" />,
     color: "text-yellow-500",
     label: "Creating...",
-  },
-  connecting: {
-    icon: <LoaderIcon className="size-3 animate-spin" />,
-    color: "text-yellow-500",
-    label: "Connecting...",
   },
   ready: {
     icon: <CheckCircleIcon className="size-3" />,
     color: "text-green-500",
     label: "Ready",
   },
-  "writing files": {
+  writing: {
     icon: <LoaderIcon className="size-3 animate-spin" />,
     color: "text-blue-400",
     label: "Writing files...",
@@ -129,6 +117,11 @@ const statusConfig: Record<
     icon: <LoaderIcon className="size-3 animate-spin" />,
     color: "text-blue-400",
     label: "Running...",
+  },
+  done: {
+    icon: <CheckCircleIcon className="size-3" />,
+    color: "text-green-500",
+    label: "Done",
   },
   error: {
     icon: <XCircleIcon className="size-3" />,
@@ -139,20 +132,35 @@ const statusConfig: Record<
 
 export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
   const [expanded, setExpanded] = useState(false);
+  const outputRef = useRef<HTMLPreElement>(null);
 
   const events = useMemo(() => extractSandboxEvents(messages), [messages]);
-  const { status, sandboxId, lastCommand, lastExitCode, hasError, lastError } =
-    useMemo(() => getStatusFromEvents(events), [events]);
+  const { status, sandboxId, exitCode, error, stdout, stderr } = useMemo(
+    () => deriveState(events),
+    [events]
+  );
 
-  // Don't render if no sandbox events yet
+  const hasOutput = stdout.length > 0 || stderr.length > 0;
+
+  // Auto-expand when output starts streaming, auto-scroll to bottom
+  useEffect(() => {
+    if (hasOutput && !expanded) setExpanded(true);
+  }, [hasOutput]);
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [stdout, stderr]);
+
   if (events.length === 0) return null;
 
-  const cfg = statusConfig[status] || statusConfig.idle;
+  const cfg = statusConfig[status];
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 w-80">
+    <div className="fixed bottom-20 right-4 z-50 w-96">
       <div className="rounded-lg border bg-background/95 backdrop-blur shadow-lg overflow-hidden">
-        {/* Header — always visible */}
+        {/* Header */}
         <button
           type="button"
           onClick={() => setExpanded((e) => !e)}
@@ -165,6 +173,15 @@ export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
               {cfg.icon}
               {cfg.label}
             </span>
+            {exitCode !== null && (
+              <span
+                className={`text-[10px] font-mono ${
+                  exitCode === 0 ? "text-green-500" : "text-red-400"
+                }`}
+              >
+                exit={exitCode}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {sandboxId && (
@@ -180,98 +197,31 @@ export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
           </div>
         </button>
 
-        {/* Expanded content */}
+        {/* Terminal output */}
         {expanded && (
-          <div className="border-t px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
-            {/* Last command */}
-            {lastCommand && (
-              <div className="space-y-0.5">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Last command
-                </div>
-                <code className="text-xs font-mono block truncate">
-                  {lastCommand}
-                </code>
-                {lastExitCode !== null && (
-                  <span
-                    className={`text-[10px] font-mono ${
-                      lastExitCode === 0 ? "text-green-500" : "text-red-400"
-                    }`}
-                  >
-                    exit={lastExitCode}
-                  </span>
+          <div className="border-t">
+            {error && (
+              <div className="px-3 py-1.5 text-[11px] font-mono text-red-400 bg-red-500/10 border-b border-red-500/20">
+                {error.split("\n")[0].slice(0, 120)}
+              </div>
+            )}
+            {hasOutput ? (
+              <pre
+                ref={outputRef}
+                className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-64 bg-black/30"
+              >
+                {stdout}
+                {stderr && (
+                  <span className="text-red-400">{stderr}</span>
                 )}
+              </pre>
+            ) : (
+              <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                {status === "creating" && "Creating sandbox..."}
+                {status === "ready" && "Sandbox ready. Waiting for command..."}
+                {status === "done" && "(no output)"}
               </div>
             )}
-
-            {/* Error display */}
-            {hasError && lastError && (
-              <div className="space-y-0.5">
-                <div className="text-[10px] uppercase tracking-wide text-red-400">
-                  Last error
-                </div>
-                <pre className="text-[10px] font-mono text-red-400 whitespace-pre-wrap break-all max-h-20 overflow-auto">
-                  {lastError}
-                </pre>
-              </div>
-            )}
-
-            {/* Event log */}
-            <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Events ({events.length})
-              </div>
-              <div className="space-y-px">
-                {events
-                  .slice()
-                  .reverse()
-                  .slice(0, 20)
-                  .map((ev, i) => {
-                    const isError = ev.event === "error";
-                    return (
-                      <div
-                        key={`${ev.timestamp}-${i}`}
-                        className={`flex items-center justify-between text-[10px] font-mono py-0.5 ${
-                          isError ? "text-red-400" : "text-muted-foreground"
-                        }`}
-                      >
-                        <span className="truncate flex-1">
-                          {ev.event}
-                          {ev.command && (
-                            <span className="opacity-60 ml-1">
-                              {ev.command.slice(0, 30)}
-                            </span>
-                          )}
-                          {ev.filePaths && (
-                            <span className="opacity-60 ml-1">
-                              {ev.filePaths.join(", ")}
-                            </span>
-                          )}
-                          {ev.exitCode !== undefined && (
-                            <span
-                              className={`ml-1 ${
-                                ev.exitCode === 0
-                                  ? "text-green-500"
-                                  : "text-red-400"
-                              }`}
-                            >
-                              exit={ev.exitCode}
-                            </span>
-                          )}
-                          {isError && ev.message && (
-                            <span className="ml-1 opacity-80">
-                              {ev.message.split("\n")[0].slice(0, 50)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="ml-2 opacity-50 shrink-0">
-                          {new Date(ev.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
           </div>
         )}
       </div>
