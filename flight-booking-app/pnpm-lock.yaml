@@ -40,8 +40,8 @@ importers:
         specifier: ^1.13.0
         version: 1.14.0(@opentelemetry/api-logs@0.57.2)(@opentelemetry/api@1.9.0)(@opentelemetry/instrumentation@0.57.2(@opentelemetry/api@1.9.0))(@opentelemetry/resources@1.30.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-logs@0.57.2(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-metrics@1.30.1(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@1.30.1(@opentelemetry/api@1.9.0))
       '@vercel/sandbox':
-        specifier: file:vercel-sandbox-1.9.0.tgz
-        version: file:vercel-sandbox-1.9.0.tgz
+        specifier: file:vercel-sandbox-1.9.2.tgz
+        version: file:vercel-sandbox-1.9.2.tgz
       '@workflow/ai':
         specifier: 4.1.0-beta.59
         version: 4.1.0-beta.59(@opentelemetry/api@1.9.0)(ai@6.0.69(zod@4.1.12))(workflow@4.2.0-beta.74(@nestjs/common@11.1.12(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.12(@nestjs/common@11.1.12(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.0)(@swc/cli@0.7.10(@swc/core@1.15.3)(chokidar@4.0.3))(@swc/core@1.15.3)(next@16.0.10(@opentelemetry/api@1.9.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3))
@@ -2310,9 +2310,9 @@ packages:
     resolution: {integrity: sha512-wo+jCycmCX078vQSbkX+RcLvySONDCK0f9aQp5UMKQD1+B+xKt3YVbIYbZukvoHQpbm5nnk6If+ADSeK/PmCgQ==}
     engines: {node: '>=20.0.0'}
 
-  '@vercel/sandbox@file:vercel-sandbox-1.9.0.tgz':
-    resolution: {integrity: sha512-/VtPq+1rUoxL7i5D5AQb6G3VvOYOgeKAAPDzzB0Pj0PFmKF22g8Fux77NYlMFvBq0iFOenePUxc9vDde0ykTBQ==, tarball: file:vercel-sandbox-1.9.0.tgz}
-    version: 1.9.0
+  '@vercel/sandbox@file:vercel-sandbox-1.9.2.tgz':
+    resolution: {integrity: sha512-lPPihVt2zEccHn/xDdS8qSSfGL9qsVCH/m6bz0wnoKK+o79nTs2juwnDImn/QX5z8+yd4FA4M6+bBs9/LXCmyQ==, tarball: file:vercel-sandbox-1.9.2.tgz}
+    version: 1.9.2
 
   '@workflow/ai@4.1.0-beta.59':
     resolution: {integrity: sha512-Vy11b0fGlbInM1HTnb0iuodEjAW2nMP81KFtUbSfjN20nmlxNADvpOtYkMG8fOk9aSzNGcrzzPMySnze7Xmbag==}
@@ -7551,7 +7551,7 @@ snapshots:
       mixpart: 0.0.5
       picocolors: 1.1.1
 
-  '@vercel/sandbox@file:vercel-sandbox-1.9.0.tgz':
+  '@vercel/sandbox@file:vercel-sandbox-1.9.2.tgz':
     dependencies:
       '@vercel/oidc': 3.2.0
       '@workflow/serde': 4.1.0-beta.2
