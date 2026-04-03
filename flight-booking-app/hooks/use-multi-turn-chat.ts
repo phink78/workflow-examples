@@ -5,7 +5,27 @@ import { useChat } from '@ai-sdk/react';
 import { WorkflowChatTransport } from '@workflow/ai';
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 
-const STORAGE_KEY = 'workflow-run-id';
+/**
+ * Read the run ID from the URL query string.
+ */
+function getRunIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('run');
+}
+
+/**
+ * Set or clear the run ID in the URL query string (replaceState, no navigation).
+ */
+function setRunIdInUrl(runId: string | null) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (runId) {
+    url.searchParams.set('run', runId);
+  } else {
+    url.searchParams.delete('run');
+  }
+  window.history.replaceState({}, '', url.toString());
+}
 
 /**
  * Options for the useMultiTurnChat hook
@@ -76,24 +96,8 @@ function isUserMessageMarker(
 /**
  * A hook that wraps useChat to provide multi-turn chat session management.
  *
- * Key features:
- * - All messages come from the stream (single source of truth)
- * - Shows pending message for immediate feedback while waiting for stream
- * - No deduplication needed - simpler message reconstruction
- * - Automatically detects and resumes existing sessions from localStorage
- * - Routes first messages to POST /api/chat (starts new workflow)
- * - Routes follow-up messages to POST /api/chat/[runId] (resumes hook)
- *
- * @example
- * ```tsx
- * const { messages, pendingMessage, sendMessage, status, endSession } = useMultiTurnChat();
- *
- * // Send a message (automatically starts or continues session)
- * await sendMessage("What's the status of flight UA123?");
- *
- * // End the session when done
- * await endSession();
- * ```
+ * Session state is stored entirely in the URL query parameter `?run=<id>`.
+ * Copying the URL at any point gives a resumable link.
  */
 export function useMultiTurnChat<
   TMetadata extends Record<string, unknown> = Record<string, unknown>,
@@ -116,23 +120,12 @@ export function useMultiTurnChat<
   // Track which message content we've seen from stream (to clear pending)
   const seenFromStreamRef = useRef<Set<string>>(new Set());
 
-  // Initialize from URL query param or localStorage on mount
+  // Initialize from URL query param on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const urlRunId = params.get('run');
-      const storedRunId = urlRunId || localStorage.getItem(STORAGE_KEY);
-      if (storedRunId) {
-        setRunId(storedRunId);
-        setShouldResume(true);
-        localStorage.setItem(STORAGE_KEY, storedRunId);
-        // Ensure URL reflects the run ID
-        if (!urlRunId) {
-          const url = new URL(window.location.href);
-          url.searchParams.set('run', storedRunId);
-          window.history.replaceState({}, '', url.toString());
-        }
-      }
+    const urlRunId = getRunIdFromUrl();
+    if (urlRunId) {
+      setRunId(urlRunId);
+      setShouldResume(true);
     }
   }, []);
 
@@ -142,38 +135,27 @@ export function useMultiTurnChat<
       new WorkflowChatTransport({
         api: options.endpoint,
         onChatSendMessage: (response) => {
-          // Capture the workflow run ID from the response header
           const workflowRunId = response.headers.get(options.sessionIdHeader);
           if (workflowRunId) {
             setRunId(workflowRunId);
-            localStorage.setItem(STORAGE_KEY, workflowRunId);
-            // Push run ID into URL so the link is shareable/resumable
-            const url = new URL(window.location.href);
-            url.searchParams.set('run', workflowRunId);
-            window.history.replaceState({}, '', url.toString());
+            setRunIdInUrl(workflowRunId);
           }
         },
         onChatEnd: () => {
-          // Session ended - clear the stored run ID
           setRunId(null);
-          localStorage.removeItem(STORAGE_KEY);
           sentMessagesRef.current.clear();
           seenFromStreamRef.current.clear();
           setPendingMessage(null);
-          // Clear run ID from URL
-          const url = new URL(window.location.href);
-          url.searchParams.delete('run');
-          window.history.replaceState({}, '', url.toString());
+          setRunIdInUrl(null);
         },
-        // Configure reconnection to use the stored workflow run ID
         prepareReconnectToStreamRequest: ({ api, ...rest }) => {
-          const storedRunId = localStorage.getItem(STORAGE_KEY);
-          if (!storedRunId) {
-            throw new Error('No active workflow run ID found');
+          const currentRunId = getRunIdFromUrl();
+          if (!currentRunId) {
+            throw new Error('No active workflow run ID found in URL');
           }
           return {
             ...rest,
-            api: `${options.endpoint}/${encodeURIComponent(storedRunId)}/stream`,
+            api: `${options.endpoint}/${encodeURIComponent(currentRunId)}/stream`,
           };
         },
         maxConsecutiveErrors: 5,
@@ -189,7 +171,6 @@ export function useMultiTurnChat<
     stop,
     setMessages,
   } = useChat<UIMessage<TMetadata, UIDataTypes>>({
-    // Enable resume mode if we have an existing session
     resume: shouldResume,
     onError: (err) => {
       console.error('Chat error:', err);
@@ -203,22 +184,17 @@ export function useMultiTurnChat<
   });
 
   // Process messages from the stream.
-  // All user messages come from stream markers (data-workflow chunks).
-  // Deduplicate by message ID to handle stream replay.
   const messages = useMemo(() => {
     const result: UIMessage<TMetadata, UIDataTypes>[] = [];
     const seenMessageIds = new Set<string>();
-    // Track seen observability events to deduplicate (type + timestamp as key)
     const seenObservabilityEvents = new Set<string>();
 
     for (const msg of rawMessages) {
-      // Skip user messages from useChat (we only use stream markers)
       if (msg.role === 'user') {
         continue;
       }
 
       if (msg.role === 'assistant') {
-        // Process parts in order, extracting user messages from markers
         let currentAssistantParts: typeof msg.parts = [];
         let partIndex = 0;
 
@@ -226,13 +202,11 @@ export function useMultiTurnChat<
           if (isUserMessageMarker(part)) {
             const data = part.data;
 
-            // Skip duplicate user messages (can happen on stream replay)
             if (seenMessageIds.has(data.id)) {
               continue;
             }
             seenMessageIds.add(data.id);
 
-            // Flush any accumulated assistant parts
             if (currentAssistantParts.length > 0) {
               result.push({
                 ...msg,
@@ -242,15 +216,12 @@ export function useMultiTurnChat<
               currentAssistantParts = [];
             }
 
-            // Track that we've seen this content from the stream
             seenFromStreamRef.current.add(data.content);
 
-            // Clear pending message if it matches
             if (pendingMessage === data.content) {
               setPendingMessage(null);
             }
 
-            // Add the user message
             result.push({
               id: data.id,
               role: 'user',
@@ -259,7 +230,6 @@ export function useMultiTurnChat<
             continue;
           }
 
-          // Deduplicate observability events (data-workflow type)
           if (
             typeof part === 'object' &&
             part !== null &&
@@ -268,20 +238,16 @@ export function useMultiTurnChat<
             'data' in part
           ) {
             const data = part.data as Record<string, unknown>;
-            // Create a unique key from all event data to avoid collisions
-            // (e.g., two different tool-start events at the same millisecond)
             const eventKey = JSON.stringify(data);
             if (seenObservabilityEvents.has(eventKey)) {
-              continue; // Skip duplicate observability event
+              continue;
             }
             seenObservabilityEvents.add(eventKey);
           }
 
-          // Accumulate non-marker parts
           currentAssistantParts.push(part);
         }
 
-        // Flush remaining assistant parts
         if (currentAssistantParts.length > 0) {
           result.push({
             ...msg,
@@ -302,14 +268,12 @@ export function useMultiTurnChat<
         throw new Error('No active session to send follow-up to');
       }
 
-      // Create a unique key to prevent duplicate sends
       const sendKey = `${runId}-${text}-${Date.now()}`;
       if (sentMessagesRef.current.has(sendKey)) {
         return;
       }
       sentMessagesRef.current.add(sendKey);
 
-      // Send the follow-up via the hook resumption endpoint
       const response = await fetch(
         `${options.endpoint}/${encodeURIComponent(runId)}`,
         {
@@ -333,23 +297,18 @@ export function useMultiTurnChat<
   // Main send message function
   const sendMessage = useCallback(
     async (text: string) => {
-      // Show pending message immediately for instant feedback
       setPendingMessage(text);
 
       try {
         if (runId) {
-          // We have an active session - send as follow-up
           await sendFollowUp(text);
         } else {
-          // First message - start the workflow via useChat
-          // This connects us to the stream and sets up the run ID
           await baseSendMessage({
             text,
             metadata: { createdAt: Date.now() } as unknown as TMetadata,
           });
         }
       } catch (err) {
-        // Clear pending on error
         setPendingMessage(null);
         throw err;
       }
@@ -361,7 +320,6 @@ export function useMultiTurnChat<
   const endSession = useCallback(async () => {
     if (runId) {
       try {
-        // Send the end signal to the workflow
         await fetch(`${options.endpoint}/${encodeURIComponent(runId)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -371,19 +329,14 @@ export function useMultiTurnChat<
         console.error('Error ending session:', err);
       }
     }
-    // Clear local state
     setRunId(null);
     setShouldResume(false);
-    localStorage.removeItem(STORAGE_KEY);
     sentMessagesRef.current.clear();
     seenFromStreamRef.current.clear();
     setPendingMessage(null);
     setMessages([]);
     stop();
-    // Clear run ID from URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete('run');
-    window.history.replaceState({}, '', url.toString());
+    setRunIdInUrl(null);
   }, [runId, setMessages, stop]);
 
   return {
