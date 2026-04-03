@@ -142,7 +142,7 @@ export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
   const cfg = statusConfig[status];
 
   return (
-    <div className="rounded-lg border overflow-hidden mb-4">
+    <div className="sticky bottom-0 z-10 rounded-lg border overflow-hidden mb-2 bg-background/95 backdrop-blur max-h-[200px] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
       </div>
 
       {/* Terminal output */}
-      <div className="border-t">
+      <div className="border-t min-h-0 overflow-auto flex-1">
         {error && (
           <div className="px-3 py-1.5 text-[11px] font-mono text-red-400 bg-red-500/10 border-b border-red-500/20">
             {error.split("\n")[0].slice(0, 120)}
@@ -179,7 +179,7 @@ export function SandboxWidget({ messages }: { messages: UIMessage[] }) {
         {hasOutput ? (
           <pre
             ref={outputRef}
-            className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-64 bg-black/30"
+            className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto bg-black/30"
           >
             {stdout}
             {stderr && <span className="text-red-400">{stderr}</span>}

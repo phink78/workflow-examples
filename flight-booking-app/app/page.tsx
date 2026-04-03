@@ -157,17 +157,12 @@ export default function ChatPage() {
                         return null;
                       }
 
-                      // Render sandbox tools inline
+                      // Skip sandbox tools — rendered as a single combined widget below
                       if (
                         part.type === 'tool-writeFile' ||
                         part.type === 'tool-execute'
                       ) {
-                        return (
-                          <SandboxWidget
-                            key={part.toolCallId}
-                            messages={messages}
-                          />
-                        );
+                        return null;
                       }
 
                       // Render webhook waiting (custom component)
@@ -313,6 +308,8 @@ export default function ChatPage() {
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
+
+      <SandboxWidget messages={messages} />
 
       <ChatInput
         status={status}
