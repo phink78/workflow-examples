@@ -6,13 +6,58 @@ import {
 } from 'ai';
 import { DurableAgent } from '@workflow/ai/agent';
 import { SYSTEM_PROMPT, agentTools } from './steps/tools';
-import { getWritable, getWorkflowMetadata } from 'workflow';
+import { getWritable, getWorkflowMetadata, getStepMetadata } from 'workflow';
 import { chatMessageHook } from './hooks/chat-message';
 import { writeUserMessageMarker, writeTurnEnd } from './steps/writer';
 import { Sandbox } from '@vercel/sandbox';
 
+const withStrictMetadataCheck = async <T>(fn: () => Promise<T>) => {
+  const workflowMetadata = getWorkflowMetadata();
+  const stepMetadata = getStepMetadata();
+
+  return await fn().then((result) => ({
+    result,
+    workflowMetadata,
+    stepMetadata,
+  }));
+};
+
+export interface MetadataContextReproInput {
+  label?: string;
+}
+
+export interface MetadataContextReproResult {
+  label: string;
+  workflowRunId: string;
+  workflowStartedAt: string;
+  stepId: string;
+  attempt: number;
+  stepStartedAt: string;
+}
+
+const metadataContextReproStep = async ({
+  label = 'metadata-context-repro',
+}: MetadataContextReproInput): Promise<MetadataContextReproResult> => {
+  'use step';
+
+  const { workflowMetadata, stepMetadata } = await withStrictMetadataCheck(
+    async () => label
+  );
+
+  return {
+    label,
+    workflowRunId: workflowMetadata.workflowRunId,
+    workflowStartedAt: workflowMetadata.workflowStartedAt.toISOString(),
+    stepId: stepMetadata.stepId,
+    attempt: stepMetadata.attempt,
+    stepStartedAt: stepMetadata.stepStartedAt.toISOString(),
+  };
+};
+
 export async function backgroundCodingAgent(initialMessages: UIMessage[]) {
   'use workflow';
+
+  await metadataContextReproStep({ label: 'backgroundCodingAgent' });
 
   const { workflowRunId: runId, workflowStartedAt } = getWorkflowMetadata();
   const writable = getWritable<UIMessageChunk>();
