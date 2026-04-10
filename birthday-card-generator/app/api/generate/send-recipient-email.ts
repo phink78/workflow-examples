@@ -1,6 +1,7 @@
 import { Resend } from 'resend';
 import { generatePostcardEmailTemplate } from '@/lib/template';
 import { v4 as uuid } from 'uuid';
+import { writeProgressEvent } from './stream-progress';
 
 type RsvpReply = {
   email: string;
@@ -25,6 +26,13 @@ export const sendRecipientEmail = async ({
   'use step';
 
   try {
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'send-postcard',
+      status: 'in_progress',
+      message: 'Sending the postcard.',
+    });
+
     console.log(`[STEP] Sending birthday card to recipient: ${recipientEmail}`);
     console.log(`[STEP] RSVP replies:`, rsvpReplies);
 
@@ -58,6 +66,12 @@ export const sendRecipientEmail = async ({
       ],
     });
 
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'send-postcard',
+      status: 'completed',
+      message: 'Postcard sent successfully.',
+    });
     console.log('[STEP] Birthday card email sent successfully');
 
     return {

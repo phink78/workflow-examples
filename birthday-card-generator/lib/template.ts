@@ -1,6 +1,7 @@
 export function generateRsvpEmailTemplate(
   recipientEmail: string,
-  url: string
+  url: string,
+  cardText: string
 ): string {
   // Replace undefined with localhost because of a current bug in embedded world
   let callbackUrl = url.includes('://undefined/')
@@ -50,11 +51,30 @@ export function generateRsvpEmailTemplate(
             padding: 40px 24px;
           }
           .message {
-            margin: 0 0 32px;
+            margin: 0 0 24px;
             font-size: 15px;
             line-height: 1.6;
             color: #666666;
             text-align: center;
+          }
+          .postcard-wrapper {
+            margin: 0 0 24px;
+            overflow: hidden;
+            border-radius: 4px;
+            border: 1px solid #eaeaea;
+          }
+          .postcard-image {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+            display: block;
+          }
+          .postcard-text {
+            margin: 0 0 32px;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #666666;
+            text-align: left;
           }
           .button-group {
             display: flex;
@@ -103,7 +123,14 @@ export function generateRsvpEmailTemplate(
           </div>
           <div class="content">
             <p class="message">
-              We're planning a special birthday celebration and would love for you to be there!<br><br>
+              Here's the birthday card we're planning to send.<br><br>
+              If you RSVP yes, your name will be included on the card.
+            </p>
+            <div class="postcard-wrapper">
+              <img src="cid:postcard" alt="Birthday card preview" class="postcard-image" />
+            </div>
+            <p class="postcard-text">${cardText.replace(/\n/g, '<br>')}</p>
+            <p class="message">
               Please let us know if you can make it by clicking one of the buttons below.
             </p>
             <div class="button-group">

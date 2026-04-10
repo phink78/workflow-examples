@@ -109,7 +109,14 @@ cd workflow-examples/birthday-card-generator
 pnpm install
 ```
 
-3. Run the development server:
+3. Link the project and pull local environment variables:
+
+```bash
+vc link --project birthday-card-generator --scope vercel-labs
+vc env pull
+```
+
+4. Run the development server:
 
 ```bash
 pnpm dev
@@ -117,7 +124,7 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) to see your app.
 
-No `.env.local` needed! AI Gateway handles authentication automatically when deployed to Vercel.
+For local development, `vc env pull` provides `VERCEL_OIDC_TOKEN`, which AI Gateway uses automatically. You do not need to add `AI_GATEWAY_API_KEY`.
 
 ## 📜 Scripts
 
@@ -150,15 +157,19 @@ birthday-card-generator/
 
 ## 🔐 Environment Variables
 
-None required! 🎉
+For local development, pull environment variables from your linked Vercel project:
 
-The application uses Vercel AI Gateway which automatically handles authentication when deployed to Vercel. No API keys needed for local development or production.
+```bash
+vc env pull
+```
+
+This provides `VERCEL_OIDC_TOKEN` for AI Gateway auth. `RESEND_API_KEY` is also pulled from the linked Vercel project when configured there.
 
 ## 📊 Observability
 
 The app includes comprehensive logging for monitoring and debugging:
 
-- 🔄 `[WORKFLOW]` - Workflow-level events and timing
+- 🔄 Workflow-level events and timing
 - 📝 Step completion logs with character counts and durations
 - ⚠️ Error logs with timing and context
 

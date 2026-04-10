@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 const Home = () => (
-  <div className="flex h-dvh w-screen flex-col items-center justify-center">
+  <div className="flex h-dvh w-screen flex-col items-center justify-center px-4">
     <div className="flex w-full max-w-sm flex-col items-center justify-center gap-6">
       <div className="relative isolate flex">
         <div className="-rotate-12 translate-x-2 translate-y-1 rounded-full border bg-background p-3 shadow-xs">

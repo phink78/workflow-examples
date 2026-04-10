@@ -4,6 +4,7 @@ import { generateMessage } from './generate-message';
 import { generatePrompts } from './generate-prompts';
 import { requestRsvp } from './request-rsvp';
 import { sendRecipientEmail } from './send-recipient-email';
+import { closeProgressStream, writeProgressEvent } from './stream-progress';
 
 export const generateBirthdayCard = async (
   prompt: string,
@@ -13,100 +14,141 @@ export const generateBirthdayCard = async (
 ) => {
   'use workflow';
 
-  const rsvpEmail = rsvpEmails[0];
-
-  // @ts-expect-error obv this should be a Date
-  birthday = '10 seconds'; // overwrite sleep to be 10 seconds so this demo doesn't take forever
-
   try {
-    console.log(`[WORKFLOW] Starting birthday card generation for: ${prompt}`);
+    console.log(`Starting birthday card generation for: ${prompt}`);
 
-    // Step 1: Generate separate text and image prompts from user input
-    console.log('[WORKFLOW] Step 1/5: Generating text and image prompts');
+    console.log('Step 1/5: Generating text and image prompts');
     const { textPrompt, imagePrompt } = await generatePrompts(prompt);
-    console.log('[WORKFLOW] Step 1/5 complete. Prompts generated');
+    console.log('Step 1/5 complete. Prompts generated');
 
-    // Step 2: Generate image using Gemini
-    console.log('[WORKFLOW] Step 2/5: Generating image and text.');
+    console.log('Step 2/5: Generating image and text.');
     const [image, text] = await Promise.all([
       generateImage(imagePrompt),
       generateMessage(textPrompt),
     ]);
-    console.log('[WORKFLOW] Step 2/5 complete. Image and text generated');
+    console.log('Step 2/5 complete. Image and text generated');
 
-    // // Step 3: Send RSVP emails (optional)
-    // console.log('[WORKFLOW] Step 3/5: Sending RSVP email');
-    // const webhook = createWebhook();
-    // await requestRsvp(rsvpEmail, webhook.url);
-    //
-    // const rsvpReplies: Array<{ email: string; reply: string }> = [];
-    // const req = await webhook;
-    // const url = new URL(req.url);
-    // const reply = url.searchParams.get('reply') || 'no-response';
-    // const email = url.searchParams.get('email') || 'unknown';
-    // rsvpReplies.push({ email, reply });
-    //
-    // console.log(`[WORKFLOW] Step 3/5 complete. RSVP received: ${reply}`);
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'send-rsvps',
+      status: 'in_progress',
+      message: rsvpEmails.length
+        ? 'Sending RSVP emails.'
+        : 'No RSVP guests were added, skipping invitation emails.',
+    });
 
-    // Step 3: Send RSVP emails (optional)
-    console.log('[WORKFLOW] Step 3/5: Sending RSVP emails');
+    console.log('Step 3/5: Sending RSVP emails');
     const webhooks = rsvpEmails.map((_) => createWebhook());
 
-    // Send RSVP emails with webhook URLs
     await Promise.all(
-      rsvpEmails.map((friend, i) => requestRsvp(friend, webhooks[i].url))
+      rsvpEmails.map((friend, i) =>
+        requestRsvp(friend, webhooks[i].url, image, text)
+      )
     );
 
-    // // Store webhook promises - they'll resolve when users click the RSVP buttons
-    // // We don't await them here, so the workflow continues even if users don't respond
-    // const rsvpReplies: Array<{ email: string; reply: string }> = [];
+    console.log('Step 3/5. RSVP emails sent');
 
-    console.log('[WORKFLOW] Step 3/5. RSVP emails sent');
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'send-rsvps',
+      status: 'completed',
+      message: rsvpEmails.length
+        ? 'RSVP emails sent.'
+        : 'Skipped RSVP emails because no guests were added.',
+    });
 
-    const rsvpReplies = await Promise.all(
-      webhooks.map((webhook) => {
-        return webhook.then((request) => {
+    let rsvpReplies: Array<{ email: string; reply: string }> = [];
+
+    if (rsvpEmails.length === 0) {
+      await writeProgressEvent({
+        type: 'progress',
+        step: 'collect-rsvps',
+        status: 'completed',
+        message: 'No RSVPs are needed for this birthday card.',
+      });
+    } else {
+      await writeProgressEvent({
+        type: 'progress',
+        step: 'collect-rsvps',
+        status: 'in_progress',
+        message: 'Waiting for RSVP responses.',
+      });
+
+      rsvpReplies = await Promise.all(
+        webhooks.map(async (webhook) => {
+          const request = await webhook;
           const url = new URL(request.url);
-          const reply = url.searchParams.get('reply') || 'no-response';
-          const email = url.searchParams.get('email') || 'unknown';
-          return { email, reply };
-        });
-      })
-    );
-    console.log('[WORKFLOW] Step 3/5 complete. All RSVPs Received');
 
-    // webhooks.forEach((webhook) => {
-    //   webhook.then((request) => {
-    //     const url = new URL(request.url);
-    //     const reply = url.searchParams.get('reply') || 'no-response';
-    //     const email = url.searchParams.get('email') || 'unknown';
-    //     rsvpReplies.push({ email, reply });
-    //   });
-    // });
+          return {
+            email: url.searchParams.get('email') || 'unknown',
+            reply: url.searchParams.get('reply') || 'no-response',
+          };
+        })
+      );
 
-    // Step 4: Wait until event date is reached
-    console.log('[WORKFLOW] Step 4/5: Waiting until event date is reached');
+      console.log('Step 3/5 complete. All RSVPs Received');
+
+      await writeProgressEvent({
+        type: 'progress',
+        step: 'collect-rsvps',
+        status: 'completed',
+        message: 'All RSVP responses have been received.',
+      });
+    }
+
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'wait-for-birthday',
+      status: 'in_progress',
+      message: birthday
+        ? `Waiting until ${birthday.toLocaleDateString()}.`
+        : 'Waiting until the selected birthday.',
+    });
+
+    console.log('Step 4/5: Waiting until event date is reached');
     await sleep(birthday!);
-    console.log('[WORKFLOW] Step 4/5 complete. Event date reached');
+    console.log('Step 4/5 complete. Event date reached');
 
-    // Step 5: Send email to recipient
-    console.log('[WORKFLOW] Step 5/5: Sending birthday card to recipient');
+    await writeProgressEvent({
+      type: 'progress',
+      step: 'wait-for-birthday',
+      status: 'completed',
+      message: 'Birthday reached. Sending the postcard now.',
+    });
+
+    console.log('Step 5/5: Sending birthday card to recipient');
     await sendRecipientEmail({
       recipientEmail,
       cardImage: image,
       cardText: text,
       rsvpReplies,
     });
-    console.log(
-      '[WORKFLOW] Step 5/5 complete. Birthday card sent to recipient'
-    );
+    console.log('Step 5/5 complete. Birthday card sent to recipient');
 
-    return { image, text };
+    return {
+      image,
+      text,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
 
-    console.error(`[WORKFLOW] Error:`, message);
+    console.error('Error:', message);
+
+    try {
+      await writeProgressEvent({
+        type: 'error',
+        message,
+      });
+    } catch (streamError) {
+      console.error('Failed to stream workflow error', streamError);
+    }
 
     throw error;
+  } finally {
+    try {
+      await closeProgressStream();
+    } catch (error) {
+      console.error('Failed to close progress stream', error);
+    }
   }
 };

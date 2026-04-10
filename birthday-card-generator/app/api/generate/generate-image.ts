@@ -1,11 +1,18 @@
 import { generateText } from 'ai';
+import { writeProgressEvent } from './stream-progress';
 
 export const generateImage = async (prompt: string) => {
   'use step';
 
-  // Generate image using Gemini 2.5 Flash Image model via AI Gateway
+  await writeProgressEvent({
+    type: 'progress',
+    step: 'generate-image',
+    status: 'in_progress',
+    message: 'Generating the postcard image.',
+  });
+
   const { files } = await generateText({
-    model: 'google/gemini-2.5-flash-image',
+    model: 'google/gemini-2.5-flash-image-preview',
     prompt: `Generate a birthday card image based on this description: ${prompt}`,
   });
 
@@ -18,5 +25,15 @@ export const generateImage = async (prompt: string) => {
 
   // Format as a data URI with the proper media type for use in img src
   const mediaType = file.mediaType || 'image/png';
-  return `data:${mediaType};base64,${file.base64}`;
+  const image = `data:${mediaType};base64,${file.base64}`;
+
+  await writeProgressEvent({
+    type: 'progress',
+    step: 'generate-image',
+    status: 'completed',
+    message: 'Postcard image ready.',
+    image,
+  });
+
+  return image;
 };
