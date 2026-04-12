@@ -50,7 +50,7 @@ This starter is a template for a Next.js project that uses Workflow DevKit with 
 7. Inspect the stored runs if you want to confirm the workflow completed:
 
    ```bash
-   npx workflow inspect runs --backend @workflow/world-postgres
+   bunx workflow inspect runs --backend @workflow/world-postgres
    ```
 
 ### Production Deployment
