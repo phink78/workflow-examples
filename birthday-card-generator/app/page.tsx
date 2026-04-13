@@ -5,7 +5,7 @@ import { BirthdayCardForm } from '@/components/form';
 export const metadata: Metadata = {
   title: 'Birthday Card Generator',
   description:
-    'Generate a birthday card for your loved ones with Workflow Development Kit.',
+    'Generate a birthday card for your loved ones with Workflow SDK.',
 };
 
 const Home = () => (
@@ -27,8 +27,7 @@ const Home = () => (
           Birthday Card Generator
         </h1>
         <p className="text-balance text-muted-foreground sm:text-lg">
-          Generate a birthday card for your loved ones with Workflow Development
-          Kit.
+          Generate a birthday card for your loved ones with Workflow SDK.
         </p>
       </div>
       <BirthdayCardForm />
