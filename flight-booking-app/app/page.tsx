@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -21,11 +21,6 @@ import { BookingApproval } from "@/components/booking-approval";
 import { useMultiTurnChat } from "@/hooks/use-multi-turn-chat";
 import type { MyMessageMetadata } from "@/schemas/chat";
 import ChatInput from "@/components/chat-input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   Sidebar,
   type ConversationEntry,
@@ -140,7 +135,6 @@ function ChatView({
     error,
     runId,
     sendMessage,
-    stop,
     pendingMessage,
   } = useMultiTurnChat<MyMessageMetadata>({
     onError: (err) => console.error("Chat error:", err),
@@ -167,32 +161,10 @@ function ChatView({
     textareaRef.current?.focus();
   }, []);
 
-  // Extract t=0 from the first request-received event
-  const requestReceivedAt = useMemo(() => {
-    for (const msg of messages) {
-      for (const part of msg.parts) {
-        if (part.type === "data-workflow" && "data" in part) {
-          const data = part.data as any;
-          if (data?.type === "request-received") {
-            return data.timestamp as number;
-          }
-        }
-      }
-    }
-    return null;
-  }, [messages]);
-
   return (
     <div className="flex-1 flex flex-col min-w-0">
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col w-full max-w-2xl pt-12 pb-24 mx-auto stretch">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold mb-2">Flight Booking Agent</h1>
-            <p className="text-muted-foreground">
-              Book a flight using workflows
-            </p>
-          </div>
-
           {/* Error display */}
           {error && (
             <div className="text-sm mb-4 p-4 rounded-lg border border-red-500/50 bg-red-500/10 text-red-600 dark:text-red-400">
@@ -268,24 +240,12 @@ function ChatView({
                             );
                           }
 
-                          // Render workflow data messages (non-user-message data)
+                          // Skip workflow data messages (observability events)
                           if (
                             part.type === "data-workflow" &&
                             "data" in part
                           ) {
-                            const data = part.data as any;
-                            // Skip user-message markers (handled by useMultiTurnChat)
-                            if (data?.type === "user-message") {
-                              return null;
-                            }
-                            // Render observability events inline
-                            return (
-                              <WorkflowEventBadge
-                                key={`${message.id}-data-${partIndex}`}
-                                data={data}
-                                t0={requestReceivedAt}
-                              />
-                            );
+                            return null;
                           }
 
                           // Render tool parts
@@ -417,165 +377,13 @@ function ChatView({
 
       <div className="p-2 flex justify-center">
         <ChatInput
-          status={status}
           textareaRef={textareaRef}
           onNewChat={onNewChat}
           onSendMessage={handleSendMessage}
-          stop={stop}
         />
       </div>
     </div>
   );
-}
-
-// Component to render workflow observability events inline
-function WorkflowEventBadge({ data, t0 }: { data: any; t0: number | null }) {
-  if (!data?.type) return null;
-
-  // Format delta time from t0
-  const formatDelta = (timestamp: number) => {
-    if (!t0) return "";
-    const deltaMs = timestamp - t0;
-    if (deltaMs < 1000) return `+${deltaMs}ms`;
-    return `+${(deltaMs / 1000).toFixed(2)}s`;
-  };
-
-  // Helper to wrap delta timestamps with tooltip
-  const DeltaTimestamp = ({ timestamp }: { timestamp: number }) => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="cursor-help">{formatDelta(timestamp)}</span>
-      </TooltipTrigger>
-      <TooltipContent>Time since request received</TooltipContent>
-    </Tooltip>
-  );
-
-  switch (data.type) {
-    case "request-received":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Request received</span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="font-mono text-[10px] cursor-help">t=0</span>
-            </TooltipTrigger>
-            <TooltipContent>
-              Reference time for all other timestamps
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      );
-
-    case "workflow-start":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Workflow started</span>
-          <span className="font-mono text-[10px] flex items-center gap-1.5">
-            <span>{data.workflowRunId}</span>
-            {data.timestamp && <DeltaTimestamp timestamp={data.timestamp} />}
-          </span>
-        </div>
-      );
-
-    case "workflow-end":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Workflow completed</span>
-          <span className="font-mono text-[10px] flex items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-help">
-                  {data.turnCount} turn{data.turnCount !== 1 ? "s" : ""} in{" "}
-                  {(data.totalDurationMs / 1000).toFixed(1)}s
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Total workflow duration</TooltipContent>
-            </Tooltip>
-            {data.timestamp && <DeltaTimestamp timestamp={data.timestamp} />}
-          </span>
-        </div>
-      );
-
-    case "turn-start":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Turn {data.turnNumber} started</span>
-          {data.timestamp && (
-            <span className="font-mono text-[10px]">
-              <DeltaTimestamp timestamp={data.timestamp} />
-            </span>
-          )}
-        </div>
-      );
-
-    case "turn-end":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Turn {data.turnNumber} completed</span>
-          <span className="font-mono text-[10px] flex items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-help">
-                  {(data.durationMs / 1000).toFixed(1)}s
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Duration of this turn</TooltipContent>
-            </Tooltip>
-            {data.timestamp && <DeltaTimestamp timestamp={data.timestamp} />}
-          </span>
-        </div>
-      );
-
-    case "tool-start":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Tool started</span>
-          <span className="font-mono text-[10px] flex items-center gap-1.5">
-            <span>{data.toolName}</span>
-            {data.timestamp && <DeltaTimestamp timestamp={data.timestamp} />}
-          </span>
-        </div>
-      );
-
-    case "tool-end":
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>Tool completed</span>
-          <span className="font-mono text-[10px] flex items-center gap-1.5">
-            <span>{data.toolName}</span>
-            {data.timestamp && <DeltaTimestamp timestamp={data.timestamp} />}
-          </span>
-        </div>
-      );
-
-    case "tool-call":
-      // Legacy support for old tool-call events
-      return (
-        <div className="flex items-center justify-between w-full text-xs text-muted-foreground/60 mb-1">
-          <span>{data.toolName}</span>
-          {data.timestamp && (
-            <span className="font-mono text-[10px]">
-              <DeltaTimestamp timestamp={data.timestamp} />
-            </span>
-          )}
-        </div>
-      );
-
-    case "agent-step":
-      // Skip rendering agent-step since we now have realtime tool-call events
-      return null;
-
-    default:
-      // Render generic data messages
-      if (data?.message) {
-        return (
-          <div className="text-xs px-3 py-2 rounded-md mb-2 bg-blue-700/25 text-blue-300 border border-blue-700/25">
-            {data.message}
-          </div>
-        );
-      }
-      return null;
-  }
 }
 
 // Helper function to parse tool output with various formats
