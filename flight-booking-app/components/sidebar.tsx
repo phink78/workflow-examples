@@ -51,6 +51,11 @@ export function Sidebar({
         </Button>
       </div>
       <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+        {conversations.length === 0 && (
+          <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+            No conversations yet
+          </p>
+        )}
         {conversations.map((conv) => (
           <div
             key={conv.runId}
