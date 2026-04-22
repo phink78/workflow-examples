@@ -27,7 +27,7 @@ export async function agentWorkflow(messages: UIMessage[]) {
 	});
 
 	await agent.stream({
-		messages: convertToModelMessages(messages),
+		messages: await convertToModelMessages(messages),
 		writable,
 	});
 
