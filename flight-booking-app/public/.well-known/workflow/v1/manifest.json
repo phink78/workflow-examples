@@ -1,0 +1,296 @@
+{
+  "version": "1.0.0",
+  "steps": {
+    "workflows/chat/steps/writer.ts": {
+      "writeRequestReceived": {
+        "stepId": "step//./workflows/chat/steps/writer//writeRequestReceived"
+      },
+      "writeStreamClose": {
+        "stepId": "step//./workflows/chat/steps/writer//writeStreamClose"
+      },
+      "writeTurnEnd": {
+        "stepId": "step//./workflows/chat/steps/writer//writeTurnEnd"
+      },
+      "writeUserMessageMarker": {
+        "stepId": "step//./workflows/chat/steps/writer//writeUserMessageMarker"
+      }
+    },
+    "node_modules/@workflow/ai/dist/agent/stream-text-iterator.js": {
+      "writeToolOutputToUI": {
+        "stepId": "step//@workflow/ai@4.1.0-beta.59//writeToolOutputToUI"
+      }
+    },
+    "node_modules/@workflow/ai/dist/agent/do-stream-step.js": {
+      "doStreamStep": {
+        "stepId": "step//@workflow/ai@4.1.0-beta.59//doStreamStep"
+      }
+    },
+    "node_modules/@workflow/ai/dist/agent/durable-agent.js": {
+      "closeStream": {
+        "stepId": "step//@workflow/ai/agent@4.1.0-beta.59//closeStream"
+      },
+      "convertChunksToUIMessages": {
+        "stepId": "step//@workflow/ai/agent@4.1.0-beta.59//convertChunksToUIMessages"
+      },
+      "writeFinishChunk": {
+        "stepId": "step//@workflow/ai/agent@4.1.0-beta.59//writeFinishChunk"
+      }
+    },
+    "node_modules/workflow/dist/stdlib.js": {
+      "fetch": {
+        "stepId": "step//workflow@4.2.0-beta.75//fetch"
+      }
+    },
+    "node_modules/workflow/dist/internal/builtins.js": {
+      "__builtin_response_array_buffer": {
+        "stepId": "__builtin_response_array_buffer"
+      },
+      "__builtin_response_json": {
+        "stepId": "__builtin_response_json"
+      },
+      "__builtin_response_text": {
+        "stepId": "__builtin_response_text"
+      }
+    },
+    "workflows/chat/steps/tools.ts": {
+      "bookFlight": {
+        "stepId": "step//./workflows/chat/steps/tools//bookFlight"
+      },
+      "checkBaggageAllowance": {
+        "stepId": "step//./workflows/chat/steps/tools//checkBaggageAllowance"
+      },
+      "checkFlightStatus": {
+        "stepId": "step//./workflows/chat/steps/tools//checkFlightStatus"
+      },
+      "getAirportInfo": {
+        "stepId": "step//./workflows/chat/steps/tools//getAirportInfo"
+      },
+      "searchFlights": {
+        "stepId": "step//./workflows/chat/steps/tools//searchFlights"
+      }
+    }
+  },
+  "workflows": {
+    "workflows/chat/index.ts": {
+      "chat": {
+        "workflowId": "workflow//./workflows/chat/index//chat",
+        "graph": {
+          "nodes": [
+            {
+              "id": "start",
+              "type": "workflowStart",
+              "data": {
+                "label": "Start: chat",
+                "nodeKind": "workflow_start"
+              }
+            },
+            {
+              "id": "node_0",
+              "type": "agent",
+              "data": {
+                "label": "DurableAgent",
+                "nodeKind": "agent"
+              },
+              "metadata": {
+                "isStepReference": true,
+                "referenceContext": "DurableAgent"
+              }
+            },
+            {
+              "id": "node_1",
+              "type": "tool",
+              "data": {
+                "label": "searchFlights",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "searchFlights",
+                "referenceContext": "tools.searchFlights.execute"
+              }
+            },
+            {
+              "id": "node_2",
+              "type": "tool",
+              "data": {
+                "label": "checkFlightStatus",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "checkFlightStatus",
+                "referenceContext": "tools.checkFlightStatus.execute"
+              }
+            },
+            {
+              "id": "node_3",
+              "type": "tool",
+              "data": {
+                "label": "getAirportInfo",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "getAirportInfo",
+                "referenceContext": "tools.getAirportInfo.execute"
+              }
+            },
+            {
+              "id": "node_4",
+              "type": "tool",
+              "data": {
+                "label": "bookFlight",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "bookFlight",
+                "referenceContext": "tools.bookFlight.execute"
+              }
+            },
+            {
+              "id": "node_5",
+              "type": "tool",
+              "data": {
+                "label": "checkBaggageAllowance",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "checkBaggageAllowance",
+                "referenceContext": "tools.checkBaggageAllowance.execute"
+              }
+            },
+            {
+              "id": "node_6",
+              "type": "tool",
+              "data": {
+                "label": "executeSleep",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "sleep",
+                "referenceContext": "tools.sleep.execute"
+              }
+            },
+            {
+              "id": "node_7",
+              "type": "tool",
+              "data": {
+                "label": "executeBookingApproval",
+                "nodeKind": "tool"
+              },
+              "metadata": {
+                "isTool": true,
+                "toolName": "bookingApproval",
+                "referenceContext": "tools.bookingApproval.execute"
+              }
+            },
+            {
+              "id": "end",
+              "type": "workflowEnd",
+              "data": {
+                "label": "Return",
+                "nodeKind": "workflow_end"
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "e_node_0_node_1",
+              "source": "node_0",
+              "target": "node_1",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_2",
+              "source": "node_0",
+              "target": "node_2",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_3",
+              "source": "node_0",
+              "target": "node_3",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_4",
+              "source": "node_0",
+              "target": "node_4",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_5",
+              "source": "node_0",
+              "target": "node_5",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_6",
+              "source": "node_0",
+              "target": "node_6",
+              "type": "tool"
+            },
+            {
+              "id": "e_node_0_node_7",
+              "source": "node_0",
+              "target": "node_7",
+              "type": "tool"
+            },
+            {
+              "id": "e_start_node_0",
+              "source": "start",
+              "target": "node_0",
+              "type": "default"
+            },
+            {
+              "id": "e_node_1_end",
+              "source": "node_1",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_2_end",
+              "source": "node_2",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_3_end",
+              "source": "node_3",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_4_end",
+              "source": "node_4",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_5_end",
+              "source": "node_5",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_6_end",
+              "source": "node_6",
+              "target": "end",
+              "type": "default"
+            },
+            {
+              "id": "e_node_7_end",
+              "source": "node_7",
+              "target": "end",
+              "type": "default"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "classes": {}
+}
