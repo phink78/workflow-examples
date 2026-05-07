@@ -1,2 +1,3 @@
 .vercel
 .env*.local
+ai-sdk-workflow-patterns/.env.txt
